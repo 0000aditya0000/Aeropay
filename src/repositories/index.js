@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const {
+  sequelize,
   User,
   Recharge,
   Withdrawl,
@@ -15,31 +16,40 @@ const { PAYMENT_MODE } = require('../constants');
 const { getDateParts } = require('../helpers/orderId');
 
 class RechargeRepository {
+  /**
+   * SkillPay-compatible INSERT using core columns only
+   * (avoids crash when silkpay_timestamp / gateway_transaction_id are absent).
+   */
   async createPending({
     orderId,
     userId,
     userMobile,
     amount,
     rechargeType = 'aeropay',
-    gatewayTransactionId = null,
-    timestamp = Date.now(),
   }) {
     const { date, time } = getDateParts();
-    return Recharge.create({
-      recharge_id: orderId,
-      order_id: orderId,
-      userId: userId || 0,
-      user_mobile: userMobile || '',
-      recharge_amount: amount,
-      recharge_type: rechargeType,
-      payment_mode: PAYMENT_MODE,
-      date,
-      time,
-      silkpay_timestamp: timestamp,
-      gateway_transaction_id: gatewayTransactionId,
-      recharge_status: 'pending',
-      isDepAdded: 0,
-    });
+    await sequelize.query(
+      `INSERT INTO recharge (
+        recharge_id, order_id, userId, user_mobile, recharge_amount,
+        recharge_type, payment_mode, date, time, recharge_status, isDepAdded
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      {
+        replacements: [
+          orderId,
+          orderId,
+          userId || 0,
+          userMobile || '',
+          amount,
+          rechargeType,
+          PAYMENT_MODE,
+          date,
+          time,
+          'pending',
+          0,
+        ],
+      }
+    );
+    return { order_id: orderId };
   }
 
   async findByOrderId(orderId) {

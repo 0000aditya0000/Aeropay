@@ -9,8 +9,16 @@ if (!fs.existsSync(LOG_DIR)) {
 
 const { combine, timestamp, printf, errors, colorize } = winston.format;
 
+const safeStringify = (value) => {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
 const lineFormat = printf(({ level, message, timestamp: ts, stack, ...meta }) => {
-  const extra = Object.keys(meta).length ? `\n${JSON.stringify(meta, null, 2)}` : '';
+  const extra = Object.keys(meta).length ? `\n${safeStringify(meta)}` : '';
   const body = stack || message;
   return `[${ts}] [${level.toUpperCase()}] ${body}${extra}`;
 });
@@ -34,6 +42,7 @@ const consoleLogger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: combine(colorize({ all: true }), baseFormat),
   transports: [new winston.transports.Console()],
+  exitOnError: false,
 });
 
 const createNamedLogger = (filename, level = 'info') =>
@@ -43,8 +52,7 @@ const createNamedLogger = (filename, level = 'info') =>
     transports: [fileTransport(filename, level), new winston.transports.Console({
       format: combine(colorize({ all: true }), baseFormat),
     })],
-    exceptionHandlers: [fileTransport('exceptions.log', 'error')],
-    rejectionHandlers: [fileTransport('exceptions.log', 'error')],
+    exitOnError: false,
   });
 
 const combinedLogger = createNamedLogger('combined.log');
@@ -52,6 +60,7 @@ const errorLogger = winston.createLogger({
   level: 'error',
   format: baseFormat,
   transports: [fileTransport('errors.log', 'error'), new winston.transports.Console()],
+  exitOnError: false,
 });
 const gatewayLogger = createNamedLogger('gateway.log');
 const webhookLogger = createNamedLogger('webhooks.log');
@@ -61,6 +70,7 @@ const exceptionLogger = winston.createLogger({
   level: 'error',
   format: baseFormat,
   transports: [fileTransport('exceptions.log', 'error')],
+  exitOnError: false,
 });
 
 const info = (tag, message, meta) => combinedLogger.info(`[${tag}] ${message}`, meta || {});
@@ -104,10 +114,10 @@ const printTerminalBlock = ({
     `Status : ${status ?? '-'}`,
     '',
     'Request',
-    JSON.stringify(request ?? {}, null, 2),
+    safeStringify(request ?? {}),
     '',
     'Response',
-    JSON.stringify(response ?? {}, null, 2),
+    safeStringify(response ?? {}),
     line,
   ].join('\n');
   console.log(block);

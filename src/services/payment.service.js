@@ -30,6 +30,8 @@ class PaymentService {
       throw new ValidationError('Valid amount is required');
     }
 
+    logger.info('PaymentService', 'createUserOrder start', { userId, amount });
+
     const user = await userRepository.getStatus(userId);
     if (!user) throw new ValidationError('User not found', { userId });
     if (Number(user.status) !== 1) {
@@ -38,6 +40,8 @@ class PaymentService {
 
     const merchantOrderNo = generatePayinOrderId();
     const orderAmount = Number(amount);
+
+    logger.info('PaymentService', 'Calling AeroPay createPayin', { merchantOrderNo, orderAmount });
 
     const gatewayResult = await aeropayApiService.createPayinOrder(
       {
@@ -51,6 +55,12 @@ class PaymentService {
     );
 
     const gw = gatewayResult.data;
+    logger.info('PaymentService', 'AeroPay response', {
+      code: gw?.code,
+      message: gw?.message,
+      hasData: Boolean(gw?.data),
+    });
+
     if (!gw || Number(gw.code) !== 200 || !gw.data) {
       throw new GatewayError(gw?.message || 'AeroPay payin create failed', gw);
     }
@@ -60,14 +70,14 @@ class PaymentService {
       throw new GatewayError('Failed to get payment URL from AeroPay', gw);
     }
 
+    logger.info('PaymentService', 'Inserting recharge row', { merchantOrderNo, orderNo });
+
     await rechargeRepository.createPending({
       orderId: merchantOrderNo,
       userId,
       userMobile: user_mobile,
       amount: orderAmount,
       rechargeType: recharge_type || 'aeropay',
-      gatewayTransactionId: orderNo || null,
-      timestamp: Date.now(),
     });
 
     await paymentOrderRepository.create({

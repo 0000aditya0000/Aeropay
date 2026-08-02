@@ -79,10 +79,19 @@ const requestLoggerMiddleware = (req, res, next) => {
 
 const responseTimeMiddleware = (req, res, next) => {
   const start = process.hrtime.bigint();
-  res.on('finish', () => {
-    const diff = Number(process.hrtime.bigint() - start) / 1e6;
-    res.setHeader('X-Response-Time', `${diff.toFixed(2)}ms`);
-  });
+  // Must set header BEFORE response ends — setHeader on 'finish' throws and can crash the process (CF 502).
+  const originalEnd = res.end.bind(res);
+  res.end = (...args) => {
+    try {
+      if (!res.headersSent) {
+        const diff = Number(process.hrtime.bigint() - start) / 1e6;
+        res.setHeader('X-Response-Time', `${diff.toFixed(2)}ms`);
+      }
+    } catch (_) {
+      // ignore
+    }
+    return originalEnd(...args);
+  };
   next();
 };
 
