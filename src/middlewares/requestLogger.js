@@ -2,9 +2,22 @@ const logger = require('../utils/logger');
 const { logRepository } = require('../repositories');
 const { GATEWAY_NAME } = require('../constants');
 
+/** Browser hits on API host for cashier/static files — not payment traffic */
+const isNoisePath = (path = '') =>
+  /\.(js|css|map|ico|png|jpg|jpeg|gif|svg|woff2?|ttf|eot)(\?|$)/i.test(path) ||
+  path.startsWith('/assets/') ||
+  path.startsWith('/js/') ||
+  path.startsWith('/css/') ||
+  path.startsWith('/favicon');
+
 const requestLoggerMiddleware = (req, res, next) => {
   const start = Date.now();
   const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress;
+  const quiet = req.method === 'GET' && isNoisePath(req.originalUrl || req.path || '');
+
+  if (quiet) {
+    return next();
+  }
 
   logger.requestLogger.info('Incoming request', {
     requestId: req.requestId,

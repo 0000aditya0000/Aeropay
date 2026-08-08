@@ -9,11 +9,22 @@ const CREATE_ORDER_COOLDOWN_MS = 5 * 60 * 1000;
 /** @type {Map<string, { hits: number[], cooldownUntil: number }>} */
 const createOrderBuckets = new Map();
 
+const isWebhookPath = (req) => {
+  const path = req.path || req.originalUrl || '';
+  return (
+    path.includes('/api/payment/webhook') ||
+    path.includes('/api/payments/webhook') ||
+    path.includes('/api/payout/webhook')
+  );
+};
+
 const globalRateLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
   standardHeaders: true,
   legacyHeaders: false,
+  // Never throttle AeroPay callbacks — a 429 here skips wallet credit
+  skip: isWebhookPath,
   message: {
     success: false,
     message: 'Too many requests',

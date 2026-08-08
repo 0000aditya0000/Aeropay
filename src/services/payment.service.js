@@ -178,9 +178,10 @@ class PaymentService {
   }
 
   async processPayinWebhook(payload, meta = {}) {
-    const signatureValid = verifySignature(payload, config.aeropay.secret, {
-      forceAmountDecimals: true,
-    });
+    // AeroPay usually signs orderAmount with 2 decimals; fall back without forcing
+    const signatureValid =
+      verifySignature(payload, config.aeropay.secret, { forceAmountDecimals: true }) ||
+      verifySignature(payload, config.aeropay.secret, { forceAmountDecimals: false });
 
     await logRepository.createWebhook({
       request_id: meta.requestId,
@@ -199,7 +200,11 @@ class PaymentService {
     }).catch(() => {});
 
     if (!signatureValid) {
-      logger.error('PaymentWebhook', 'Invalid signature', { mchOrderNo: payload.mchOrderNo });
+      logger.error('PaymentWebhook', 'Invalid signature — wallet will NOT be credited', {
+        mchOrderNo: payload.mchOrderNo,
+        code: payload.code,
+        orderAmount: payload.orderAmount,
+      });
       throw new SignatureError('Webhook signature verification failed');
     }
 
@@ -211,10 +216,25 @@ class PaymentService {
 
     // code=1 success, code=2 rejected (primarily payout; payin typically success only)
     if (Number(payload.code) === WEBHOOK_CODE.SUCCESS) {
-      const affected = await rechargeRepository.markSuccessIfPending(mchOrderNo);
-      if (affected === 0) {
-        logger.warn('PaymentWebhook', 'Already processed or not found', { mchOrderNo });
-        return { processed: false, reason: 'duplicate_or_missing' };
+      await rechargeRepository.markSuccessIfPending(mchOrderNo);
+
+      const recharge = await rechargeRepository.findByOrderId(mchOrderNo);
+      if (!recharge) {
+        logger.warn('PaymentWebhook', 'Recharge row not found', { mchOrderNo });
+        return { processed: false, reason: 'not_found' };
+      }
+
+      if (Number(recharge.isDepAdded) === 1) {
+        logger.info('PaymentWebhook', 'Deposit already credited', { mchOrderNo });
+        return { processed: false, reason: 'already_credited' };
+      }
+
+      if (recharge.recharge_status !== 'success') {
+        logger.warn('PaymentWebhook', 'Recharge not in success state', {
+          mchOrderNo,
+          status: recharge.recharge_status,
+        });
+        return { processed: false, reason: 'not_success' };
       }
 
       await paymentOrderRepository.updateByMerchantOrderNo(mchOrderNo, {
@@ -224,21 +244,20 @@ class PaymentService {
         paid_at: payload.paySuccessTime ? new Date(payload.paySuccessTime) : new Date(),
       }).catch(() => {});
 
-      const recharge = await rechargeRepository.findByOrderId(mchOrderNo);
-      if (recharge) {
-        try {
-          await platformService.processSuccessfulDeposit({
-            userId: recharge.userId,
-            amount: parseFloat(recharge.recharge_amount),
-            orderId: mchOrderNo,
-          });
-        } catch (platformErr) {
-          logger.logError(
-            'PaymentWebhook',
-            `CRITICAL: Platform credit failed for ${mchOrderNo} — manual intervention required`,
-            platformErr
-          );
-        }
+      try {
+        await platformService.processSuccessfulDeposit({
+          userId: recharge.userId,
+          amount: parseFloat(recharge.recharge_amount),
+          orderId: mchOrderNo,
+        });
+        await rechargeRepository.markDepAdded(mchOrderNo);
+      } catch (platformErr) {
+        logger.logError(
+          'PaymentWebhook',
+          `CRITICAL: Platform credit failed for ${mchOrderNo} — webhook retry will re-attempt`,
+          platformErr
+        );
+        return { processed: false, reason: 'platform_credit_failed' };
       }
 
       return { processed: true, status: 'success' };

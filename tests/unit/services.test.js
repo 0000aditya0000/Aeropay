@@ -15,6 +15,7 @@ jest.mock('../../src/repositories', () => ({
   rechargeRepository: {
     createPending: jest.fn(),
     markSuccessIfPending: jest.fn(),
+    markDepAdded: jest.fn(),
     findByOrderId: jest.fn(),
     markFailed: jest.fn(),
   },
@@ -115,9 +116,16 @@ describe('Webhook process', () => {
     };
     payload.sign = generateSignature(payload, config.aeropay.secret, { forceAmountDecimals: true });
     rechargeRepository.markSuccessIfPending.mockResolvedValue(1);
-    rechargeRepository.findByOrderId.mockResolvedValue({ userId: 12, recharge_amount: 50 });
+    rechargeRepository.findByOrderId.mockResolvedValue({
+      userId: 12,
+      recharge_amount: 50,
+      recharge_status: 'success',
+      isDepAdded: 0,
+    });
+    rechargeRepository.markDepAdded.mockResolvedValue(1);
 
     const out = await paymentService.processPayinWebhook(payload);
     expect(out.processed).toBe(true);
+    expect(rechargeRepository.markDepAdded).toHaveBeenCalledWith('AERO_TEST');
   });
 });

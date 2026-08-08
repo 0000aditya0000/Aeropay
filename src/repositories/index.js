@@ -2,7 +2,6 @@ const { Op } = require('sequelize');
 const {
   sequelize,
   User,
-  Recharge,
   Withdrawl,
   PaymentOrder,
   PayoutOrder,
@@ -53,26 +52,42 @@ class RechargeRepository {
   }
 
   async findByOrderId(orderId) {
-    return Recharge.findOne({ where: { order_id: orderId } });
+    const [rows] = await sequelize.query(
+      `SELECT userId, recharge_amount, order_id, recharge_status, isDepAdded
+       FROM recharge WHERE order_id = ? LIMIT 1`,
+      { replacements: [orderId] }
+    );
+    return rows[0] || null;
   }
 
   /**
-   * Idempotent success mark — SkillPay pattern:
-   * UPDATE ... SET success, isDepAdded=1 WHERE order_id=? AND isDepAdded=0
+   * Mark recharge success only — isDepAdded stays 0 until platform credit succeeds.
    */
   async markSuccessIfPending(orderId) {
-    const [affected] = await Recharge.update(
-      { recharge_status: 'success', isDepAdded: 1 },
-      { where: { order_id: orderId, isDepAdded: 0 } }
+    const [result] = await sequelize.query(
+      `UPDATE recharge SET recharge_status = 'success'
+       WHERE order_id = ? AND recharge_status = 'pending'`,
+      { replacements: [orderId] }
     );
-    return affected;
+    return result?.affectedRows ?? 0;
+  }
+
+  /** Set after platform deposit + wallet APIs succeed (idempotent). */
+  async markDepAdded(orderId) {
+    const [result] = await sequelize.query(
+      `UPDATE recharge SET isDepAdded = 1 WHERE order_id = ? AND isDepAdded = 0`,
+      { replacements: [orderId] }
+    );
+    return result?.affectedRows ?? 0;
   }
 
   async markFailed(orderId) {
-    return Recharge.update(
-      { recharge_status: 'failed' },
-      { where: { order_id: orderId, recharge_status: { [Op.ne]: 'success' } } }
+    const [result] = await sequelize.query(
+      `UPDATE recharge SET recharge_status = 'failed'
+       WHERE order_id = ? AND recharge_status != 'success'`,
+      { replacements: [orderId] }
     );
+    return result?.affectedRows ?? 0;
   }
 }
 

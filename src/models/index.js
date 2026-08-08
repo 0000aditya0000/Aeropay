@@ -23,8 +23,7 @@ const User = sequelize.define(
 const Recharge = sequelize.define(
   'Recharge',
   {
-    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-    recharge_id: { type: DataTypes.STRING(100), allowNull: false },
+    recharge_id: { type: DataTypes.STRING(100), primaryKey: true },
     order_id: { type: DataTypes.STRING(100), allowNull: false },
     userId: { type: DataTypes.INTEGER, allowNull: true },
     user_mobile: { type: DataTypes.STRING(30), allowNull: true },
