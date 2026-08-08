@@ -32,20 +32,26 @@ const globalRateLimiter = rateLimit({
   },
 });
 
+/**
+ * Per-userId only — never IP.
+ * One blocked user must not affect other users on the same IP/NAT.
+ * If userId is missing, skip limiting and let Joi validation reject the request.
+ */
 const getCreateOrderKey = (req) => {
   const userId = req.body?.userId;
-  if (userId != null && String(userId).trim() !== '') {
-    return `user:${String(userId).trim()}`;
-  }
-  return `ip:${req.ip}`;
+  if (userId == null || String(userId).trim() === '') return null;
+  return `user:${String(userId).trim()}`;
 };
 
 /**
  * Create-order limiter: allow 3 hits within 1 minute; after the 3rd hit,
  * enforce a 5-minute cooldown before the next request is allowed.
+ * Scoped strictly per userId (not IP).
  */
 const payinRateLimiter = (req, res, next) => {
   const key = getCreateOrderKey(req);
+  if (!key) return next();
+
   const now = Date.now();
   let bucket = createOrderBuckets.get(key);
 
