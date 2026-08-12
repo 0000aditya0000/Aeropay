@@ -46,6 +46,38 @@ class PlatformService {
       bonusAmount,
     };
   }
+
+  /**
+   * Refund withdrawn amount to user wallet on payout reject/fail.
+   * Uses the same add-funds platform API as payin success: PUT /api/user/wallet/balance
+   * (exact amount — no deposit bonus).
+   */
+  async refundFailedPayout({ userId, amount, cryptoname = 'INR', withdrawId, morderId }) {
+    const refundAmount = Number(amount);
+    logger.info('Platform', 'refundFailedPayout start', {
+      userId,
+      amount: refundAmount,
+      cryptoname,
+      withdrawId,
+      morderId,
+    });
+
+    const walletRes = await this.client.put('/api/user/wallet/balance', {
+      userId,
+      cryptoname: cryptoname || 'INR',
+      balance: refundAmount,
+    });
+
+    logger.info('Platform', 'refundFailedPayout success', {
+      userId,
+      amount: refundAmount,
+      withdrawId,
+      morderId,
+      response: walletRes.data,
+    });
+
+    return { success: true, data: walletRes.data, amount: refundAmount };
+  }
 }
 
 module.exports = {

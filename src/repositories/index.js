@@ -111,6 +111,25 @@ class WithdrawlRepository {
   async findByMorderId(morderId) {
     return Withdrawl.findOne({ where: { morder_id: morderId } });
   }
+
+  /** Full withdrawl row for refund (userId + amount). */
+  async findForRefundByMorderId(morderId) {
+    const [rows] = await sequelize.query(
+      `SELECT id, userId, balance, cryptoname, status, morder_id
+       FROM withdrawl WHERE morder_id = ? LIMIT 1`,
+      { replacements: [morderId] }
+    );
+    return rows[0] || null;
+  }
+
+  /** Mark failed only if not already failed (idempotent). */
+  async markFailedIfNotAlreadyFailed(morderId) {
+    const [result] = await sequelize.query(
+      `UPDATE withdrawl SET status = 2 WHERE morder_id = ? AND status != 2`,
+      { replacements: [morderId] }
+    );
+    return result?.affectedRows ?? 0;
+  }
 }
 
 class UserRepository {
