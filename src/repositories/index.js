@@ -122,10 +122,10 @@ class WithdrawlRepository {
     return rows[0] || null;
   }
 
-  /** Mark failed only if not already failed (idempotent). */
+  /** Mark failed only if not already failed (idempotent). Gateway reject = rejected_by 2. */
   async markFailedIfNotAlreadyFailed(morderId) {
     const [result] = await sequelize.query(
-      `UPDATE withdrawl SET status = 2 WHERE morder_id = ? AND status != 2`,
+      `UPDATE withdrawl SET status = 2, rejected_by = 2 WHERE morder_id = ? AND status != 2`,
       { replacements: [morderId] }
     );
     return result?.affectedRows ?? 0;
