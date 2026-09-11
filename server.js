@@ -21,7 +21,6 @@ const start = async () => {
     const app = createApp();
     app.listen(config.port, () => {
       logger.info('Server', `${GATEWAY_NAME} listening on :${config.port}`);
-      logger.info('Server', `Docs http://localhost:${config.port}/api/docs`);
       logger.info('Server', `Health http://localhost:${config.port}/health`);
     });
   } catch (err) {
